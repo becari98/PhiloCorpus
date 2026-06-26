@@ -1,6 +1,3 @@
-O projeto foi revisado para incorporar todas as **12 correções de nível de produção** propostas. 
-
-Foram implementadas estratégias defensivas completas: a checagem da flag `fts_enabled` antes de qualquer manipulação do SQLite FTS5, fallback de métodos dinâmicos do LanceDB (`add`/`insert`), tratamento preventivo de concorrência com travamento (`busy_timeout`), rota correta do Ollama via `/api/tags`, limpeza em caso de base vetorial corrompida, sanitização de filtros SQL para evitar injeção interna, unificação robusta de configuração (Deep Merge) e redirecionamento assíncrono de logs persistentes em tempo de execução para a interface gráfica (**PyQt5**).
 
 ---
 
