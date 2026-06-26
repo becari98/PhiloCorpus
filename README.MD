@@ -1,3 +1,544 @@
+# PhiloCorpus (T420 Edition)
+
+## Guia Completo de Instalação, Configuração e Execução
+
+**Versão:** Última Implementação de Produção
+**Sistema recomendado:** Linux Mint 22.3 Xfce (64 bits)
+**Hardware-alvo:** Lenovo ThinkPad T420 (i7-2760QM, 16 GB RAM)
+
+---
+
+# 1. Visão Geral
+
+O **PhiloCorpus** é uma plataforma local de pesquisa filosófica que integra:
+
+* Biblioteca acadêmica estruturada em Markdown;
+* OCR de livros e artigos em PDF;
+* Banco relacional SQLite;
+* Banco vetorial LanceDB;
+* Recuperação híbrida (RAG);
+* Pesquisa dialogada com LLM local via Ollama;
+* Geração de referências ABNT;
+* Coleta bibliográfica em bases acadêmicas;
+* Interface gráfica em PyQt5.
+
+---
+
+# 2. Arquitetura Geral
+
+```text
+PDF
+ ↓
+OCR / Extração de Texto
+ ↓
+Markdown Estruturado
+ ↓
+SQLite + FTS5
+ ↓
+Embeddings
+ ↓
+LanceDB
+ ↓
+RAG Híbrido
+ ↓
+LLM Local (Ollama)
+ ↓
+Resposta Filosófica Contextualizada
+```
+
+---
+
+# 3. Estrutura do Projeto
+
+```text
+PhiloCorpus/
+│
+├── app.py
+├── requirements.txt
+├── philocorpus/
+│
+├── config.py
+├── database.py
+├── gui.py
+│
+├── services/
+│   ├── pdf_converter.py
+│   ├── markdown_processor.py
+│   ├── embedding_rag.py
+│   ├── llm_router.py
+│   └── abnt_formatter.py
+│
+├── plugins/
+│   └── scrapers.py
+│
+└── __init__.py
+```
+
+---
+
+# 4. Instalação das Dependências do Sistema
+
+Atualize o sistema:
+
+```bash
+sudo apt update
+sudo apt upgrade
+```
+
+Instale os pacotes necessários:
+
+```bash
+sudo apt install -y \
+python3 \
+python3-pip \
+python3-venv \
+build-essential \
+sqlite3 \
+tesseract-ocr \
+tesseract-ocr-por \
+tesseract-ocr-eng \
+ocrmypdf \
+ghostscript \
+poppler-utils \
+libgl1 \
+libglib2.0-0 \
+libsqlite3-dev
+```
+
+Verifique o Tesseract:
+
+```bash
+tesseract --version
+```
+
+Verifique o SQLite:
+
+```bash
+sqlite3 --version
+```
+
+Verifique o suporte ao FTS5:
+
+```bash
+sqlite3
+```
+
+Dentro do prompt:
+
+```sql
+pragma compile_options;
+```
+
+Procure:
+
+```text
+ENABLE_FTS5
+```
+
+Caso não apareça, o sistema continuará funcionando normalmente, apenas sem busca lexical FTS5.
+
+---
+
+# 5. Criação do Ambiente Virtual
+
+Entre na pasta do projeto:
+
+```bash
+cd ~/Projetos
+mkdir PhiloCorpus
+cd PhiloCorpus
+```
+
+Crie o ambiente:
+
+```bash
+python3 -m venv .venv
+```
+
+Ative:
+
+```bash
+source .venv/bin/activate
+```
+
+Atualize o pip:
+
+```bash
+pip install --upgrade pip wheel setuptools
+```
+
+---
+
+# 6. Arquivo requirements.txt
+
+Crie:
+
+```text
+PyQt5
+PyMuPDF
+Pillow
+PyYAML
+numpy
+pyarrow
+lancedb
+sentence-transformers
+transformers
+torch
+httpx
+beautifulsoup4
+pytesseract
+ocrmypdf
+requests
+```
+
+Instale:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+# 7. Instalação do Ollama
+
+Instale:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+Verifique:
+
+```bash
+ollama --version
+```
+
+Inicie:
+
+```bash
+systemctl --user start ollama
+```
+
+ou:
+
+```bash
+ollama serve
+```
+
+---
+
+# 8. Instalação dos Modelos Locais
+
+## Modelo leve (recomendado)
+
+```bash
+ollama pull deepseek-r1:1.5b
+```
+
+## Alternativas
+
+```bash
+ollama pull qwen2.5:3b
+```
+
+```bash
+ollama pull qwen2.5:7b
+```
+
+```bash
+ollama pull mistral:7b
+```
+
+Para o T420, recomenda-se:
+
+```text
+deepseek-r1:1.5b
+```
+
+ou
+
+```text
+qwen2.5:3b
+```
+
+---
+
+# 9. Download do Modelo de Embeddings
+
+O primeiro processamento de documento fará o download automático:
+
+```text
+intfloat/multilingual-e5-small
+```
+
+Também pode ser pré-baixado:
+
+```bash
+python
+```
+
+```python
+from sentence_transformers import SentenceTransformer
+SentenceTransformer("intfloat/multilingual-e5-small")
+```
+
+---
+
+# 10. Estrutura de Diretórios Gerada
+
+Na primeira execução serão criadas:
+
+```text
+~/.config/philocorpus/
+    settings.yaml
+
+~/.local/share/philocorpus/logs/
+    app.log
+
+~/PhiloCorpus/
+    Biblioteca/
+    cache/
+    exports/
+    philocorpus.db
+    lancedb/
+```
+
+---
+
+# 11. Configuração do settings.yaml
+
+Exemplo:
+
+```yaml
+paths:
+  library: /home/usuario/PhiloCorpus/Biblioteca
+  cache: /home/usuario/PhiloCorpus/cache
+  exports: /home/usuario/PhiloCorpus/exports
+  db: /home/usuario/PhiloCorpus/philocorpus.db
+  lancedb: /home/usuario/PhiloCorpus/lancedb
+
+ocr:
+  engine: tesseract
+  default_lang: por
+
+embeddings:
+  model: intfloat/multilingual-e5-small
+  dimension: 384
+
+llm:
+  provider: ollama
+  local_model: deepseek-r1:1.5b
+```
+
+---
+
+# 12. Organização dos Arquivos Fonte
+
+Estrutura:
+
+```text
+PhiloCorpus/
+│
+├── app.py
+├── requirements.txt
+└── philocorpus/
+```
+
+Copie os arquivos da última implementação exatamente para essa estrutura.
+
+---
+
+# 13. Execução
+
+Ative o ambiente:
+
+```bash
+source .venv/bin/activate
+```
+
+Inicie o Ollama:
+
+```bash
+ollama serve
+```
+
+Abra outro terminal.
+
+Execute:
+
+```bash
+python app.py
+```
+
+---
+
+# 14. Primeiro Uso
+
+## Etapa 1
+
+Abra:
+
+```text
+Esteira Ingestão
+```
+
+---
+
+## Etapa 2
+
+Selecione:
+
+```text
+Selecionar PDF e Iniciar Ingestão
+```
+
+---
+
+## Etapa 3
+
+O sistema executará:
+
+1. análise do PDF;
+2. OCR, se necessário;
+3. extração de metadados;
+4. criação de Markdown;
+5. indexação SQLite;
+6. criação dos embeddings;
+7. indexação no LanceDB.
+
+---
+
+## Etapa 4
+
+O documento aparecerá em:
+
+```text
+Biblioteca
+```
+
+---
+
+## Etapa 5
+
+Ative a obra em:
+
+```text
+Pesquisa Dialogada
+```
+
+Exemplos:
+
+```text
+Como Nietzsche concebe o homem como animal?
+```
+
+```text
+Quais passagens tratam do homo natura?
+```
+
+```text
+Onde aparece a crítica ao antropocentrismo?
+```
+
+---
+
+# 15. Logs
+
+Logs persistentes:
+
+```text
+~/.local/share/philocorpus/logs/app.log
+```
+
+Monitoramento em tempo real:
+
+```bash
+tail -f ~/.local/share/philocorpus/logs/app.log
+```
+
+---
+
+# 16. Backup
+
+Banco:
+
+```text
+~/PhiloCorpus/philocorpus.db
+```
+
+Vetores:
+
+```text
+~/PhiloCorpus/lancedb/
+```
+
+Biblioteca:
+
+```text
+~/PhiloCorpus/Biblioteca/
+```
+
+Backup:
+
+```bash
+tar -czf philocorpus-backup.tar.gz ~/PhiloCorpus
+```
+
+---
+
+# 17. Recuperação
+
+Apague apenas o índice vetorial:
+
+```bash
+rm -rf ~/PhiloCorpus/lancedb
+```
+
+Na próxima indexação ele será reconstruído automaticamente.
+
+---
+
+# 18. Encerramento
+
+Feche a aplicação normalmente.
+
+Se necessário:
+
+```bash
+pkill -f app.py
+```
+
+Pare o Ollama:
+
+```bash
+pkill ollama
+```
+
+---
+
+# Fluxo Completo de Pesquisa Filosófica
+
+```text
+PDF
+ ↓
+OCR
+ ↓
+Markdown
+ ↓
+SQLite
+ ↓
+Embeddings
+ ↓
+LanceDB
+ ↓
+RAG Híbrido
+ ↓
+LLM Local
+ ↓
+Resposta Filosófica com Contexto e Paginação
+```
+
+O sistema está pronto para operar como uma plataforma local de pesquisa filosófica, análise textual e construção de corpus acadêmico em ambiente Linux.
 
 ---
 
