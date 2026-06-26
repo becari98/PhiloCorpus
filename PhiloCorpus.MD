@@ -1601,3 +1601,310 @@ def main():
 if __name__ == "__main__":
     main()
 ```
+
+
+Para um projeto que "não receberá mais mudanças" e entrará em produção no seu ambiente (especialmente um Lenovo ThinkPad T420 com recursos limitados), a implementação está em um estado bastante sólido. As 12 correções introduziram mecanismos defensivos importantes e resolveram diversos pontos que normalmente aparecem apenas em uso real.
+
+Dito isso, fazendo uma revisão de engenharia de produção estrita, eu ainda observaria alguns pontos de atenção. Não necessariamente exigem mudanças agora, mas valem ser monitorados durante a execução.
+
+# Pontos fortes da implementação
+
+## 1. Configuração resiliente
+
+O `deep_merge()` elimina uma classe inteira de erros causados por YAML incompleto.
+
+Excelente para:
+
+* upgrades futuros;
+* configurações parcialmente corrompidas;
+* recuperação após edições manuais.
+
+---
+
+## 2. SQLite configurado adequadamente
+
+A combinação:
+
+```python
+PRAGMA journal_mode=WAL;
+PRAGMA busy_timeout=30000;
+PRAGMA synchronous=NORMAL;
+```
+
+é adequada para:
+
+* GUI + threads;
+* OCR em background;
+* consultas RAG simultâneas.
+
+Para o T420, é uma configuração equilibrada entre desempenho e segurança.
+
+---
+
+## 3. Tratamento do FTS5
+
+Este era provavelmente o maior risco de compatibilidade.
+
+A estratégia:
+
+```python
+self.fts_enabled = False
+```
+
+mais condicionamento de todas as operações:
+
+```python
+if db.fts_enabled:
+```
+
+elimina falhas em:
+
+* distribuições Linux antigas;
+* builds minimalistas de SQLite;
+* instalações compiladas sem FTS5.
+
+Muito bom.
+
+---
+
+## 4. LanceDB defensivo
+
+As proteções para:
+
+```python
+table.add()
+table.insert()
+create_table(...)
+```
+
+resolvem um problema recorrente de compatibilidade entre versões.
+
+Além disso:
+
+```python
+shutil.rmtree(db_dir)
+```
+
+para reconstrução automática de índices corrompidos é extremamente útil para um software de pesquisa usado por longos períodos.
+
+---
+
+## 5. Encerramento explícito do PyMuPDF
+
+O uso de:
+
+```python
+with fitz.open(...)
+```
+
+evita:
+
+* vazamentos de descritores;
+* arquivos bloqueados;
+* erros intermitentes em processamento em lote.
+
+Muito importante.
+
+---
+
+## 6. Logging persistente
+
+A combinação:
+
+* arquivo rotativo;
+* console;
+* integração com PyQt5;
+
+é adequada para depuração e manutenção de longo prazo.
+
+---
+
+# Pontos que eu monitoraria em produção
+
+## 1. Possível duplicação de handlers de logging
+
+Em:
+
+```python
+configure_logging()
+```
+
+e:
+
+```python
+logging.getLogger().addHandler(self.qt_logger)
+```
+
+se algum módulo importar `config_manager` mais de uma vez em certos cenários de reinicialização, pode haver duplicação de mensagens.
+
+Sintoma:
+
+```
+INFO ...
+INFO ...
+INFO ...
+```
+
+aparecendo duas ou três vezes.
+
+Não é um bug crítico, apenas algo para observar.
+
+---
+
+## 2. Crescimento do banco FTS
+
+Em:
+
+```python
+INSERT OR REPLACE INTO chunks_fts
+```
+
+o FTS crescerá continuamente à medida que novos documentos forem adicionados.
+
+Para milhares de livros:
+
+* pode ocupar bastante espaço;
+* `VACUUM` eventualmente pode ser necessário.
+
+No T420 isso só se tornará perceptível após um acervo muito grande.
+
+---
+
+## 3. Recarregamento do modelo de embeddings
+
+```python
+SentenceTransformer(model_name)
+```
+
+permanece em memória corretamente.
+
+Porém:
+
+```python
+RAGService._model_instance
+```
+
+não é protegido por lock.
+
+Se duas threads tentarem inicializar simultaneamente, existe pequena possibilidade de corrida.
+
+Na prática, como o processamento é iniciado pela GUI e não por múltiplos workers concorrentes, o risco é muito baixo.
+
+---
+
+## 4. Exclusão do banco vetorial
+
+```python
+shutil.rmtree(db_dir)
+```
+
+é uma abordagem pragmática.
+
+Mas significa que:
+
+* uma corrupção parcial;
+* desligamento abrupto;
+* falha de disco,
+
+pode provocar reindexação completa.
+
+Para um acervo de centenas de livros, isso pode levar bastante tempo.
+
+Não é incorreto, apenas uma decisão arquitetural.
+
+---
+
+## 5. OCR por Tesseract
+
+```python
+pix = page.get_pixmap(dpi=150)
+```
+
+Em PDFs de 1000 páginas:
+
+* o processamento será lento;
+* o consumo de RAM pode aumentar.
+
+Mas para o hardware do T420, 150 dpi é uma escolha razoável.
+
+---
+
+## 6. Recuperação contextual
+
+A expansão:
+
+```python
+prev_text
+target_text
+next_text
+```
+
+é uma excelente ideia para filosofia.
+
+Especialmente para:
+
+* Nietzsche;
+* Wittgenstein;
+* Heidegger;
+* textos aforísticos.
+
+Provavelmente aumentará significativamente a qualidade das respostas.
+
+---
+
+# Ponto mais delicado remanescente
+
+O único aspecto que eu classificaria como potencialmente problemático em uso muito intenso é este:
+
+```python
+cursor.execute("""
+DELETE FROM chunks
+...
+""")
+```
+
+seguido por:
+
+```python
+table.delete(...)
+```
+
+Se ocorrer uma exceção entre os dois bancos (SQLite e LanceDB), os índices podem ficar temporariamente dessincronizados.
+
+Na prática:
+
+* não deve quebrar a aplicação;
+* apenas pode gerar resultados vetoriais órfãos.
+
+Como o projeto não receberá mais mudanças, eu apenas recomendaria observar os logs durante as primeiras semanas de uso.
+
+---
+
+# Avaliação geral
+
+Para um projeto acadêmico local, executado em:
+
+* Linux Mint;
+* ThinkPad T420;
+* PyQt5;
+* SQLite;
+* LanceDB;
+* Ollama local;
+
+o sistema está em um estado surpreendentemente robusto.
+
+As doze correções implementadas eliminaram praticamente todas as falhas de produção que eu esperaria encontrar em uma primeira versão operacional:
+
+* compatibilidade de SQLite ✔
+* concorrência básica ✔
+* OCR resiliente ✔
+* recuperação de corrupção ✔
+* compatibilidade de versões do LanceDB ✔
+* logging persistente ✔
+* tolerância a configuração inválida ✔
+* timeout para modelos locais pesados ✔
+* sanitização de filtros ✔
+* fechamento correto de recursos ✔
+
+Para um ambiente de pesquisa filosófica pessoal e de médio porte, eu o classificaria como uma implementação madura e apta para entrar em operação contínua. O que resta são principalmente riscos de longo prazo e cenários extremos, não falhas evidentes de engenharia.
+
